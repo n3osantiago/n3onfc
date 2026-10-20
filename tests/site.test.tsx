@@ -4,13 +4,7 @@ import { JSDOM } from "jsdom";
 import React from "react";
 import sharp from "sharp";
 import jsQR from "jsqr";
-import {
-  buildInquiry,
-  CONTACT,
-  getInquiryUrl,
-  makeVCard,
-  SITE_URL,
-} from "../src/contact";
+import { CONTACT, getServiceUrl, makeVCard, SITE_URL } from "../src/contact";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", {
   url: SITE_URL,
@@ -27,17 +21,6 @@ Object.defineProperties(globalThis, {
   DOMException: { value: dom.window.DOMException, configurable: true },
   IS_REACT_ACT_ENVIRONMENT: { value: true, writable: true },
 });
-window.matchMedia = (query: string) => ({
-  matches: true,
-  media: query,
-  onchange: null,
-  addListener() {},
-  removeListener() {},
-  addEventListener() {},
-  removeEventListener() {},
-  dispatchEvent() { return true; },
-});
-window.HTMLElement.prototype.scrollIntoView = () => {};
 window.HTMLDialogElement.prototype.showModal = function () {
   this.open = true;
 };
@@ -59,50 +42,40 @@ test("contact export is a complete vCard with the live site and correct phone", 
   assert.ok(card.includes(`URL:${SITE_URL}`));
 });
 
-test("inquiries preserve punctuation, Unicode, and newlines in app links", () => {
-  const message = buildInquiry({
-    name: "  Ana & José  ",
-    business: "  Café #1  ",
-    service: "Custom NFC cards",
-    details: "  50 cards\nLogo: A&B  ",
-  });
-  const url = new URL(getInquiryUrl("whatsapp", message));
-  assert.equal(url.searchParams.get("text"), message);
-  assert.ok(message.includes("Ana & José from Café #1"));
-  assert.ok(message.includes("50 cards\nLogo: A&B"));
-  assert.equal(getInquiryUrl("telegram", message), CONTACT.telegram);
-  assert.equal(getInquiryUrl("viber", message), CONTACT.viber);
-  assert.ok(getInquiryUrl("sms", message).startsWith(`${CONTACT.sms}?body=`));
-  Object.defineProperty(navigator, "userAgent", {
-    value: "iPhone",
-    configurable: true,
-  });
-  assert.ok(getInquiryUrl("sms", message).startsWith(`${CONTACT.sms}&body=`));
+test("service inquiries open the correct WhatsApp conversation with readable text", () => {
+  const url = new URL(getServiceUrl("NFC cards & café links"));
+  assert.equal(url.origin + url.pathname, CONTACT.whatsapp);
+  assert.equal(
+    url.searchParams.get("text"),
+    "Hi Neo, I’m interested in nfc cards & café links. Could you share the options and pricing?",
+  );
 });
 
-test("service selection, message preview, and Telegram copy handoff work together", async () => {
+test("contact and service links are direct, and sharing falls back to copying the page URL", async () => {
   const user = userEvent.setup({ document });
   render(<App />);
-  await user.click(screen.getByRole("button", { name: "Ask about a website" }));
   assert.equal(
-    (screen.getByLabelText("I’m interested in") as HTMLSelectElement).value,
-    "Business websites",
+    screen
+      .getByRole("link", { name: "Message on WhatsApp" })
+      .getAttribute("href"),
+    CONTACT.whatsapp,
   );
-  await user.type(screen.getByLabelText("Your name"), "Ana");
-  await user.type(screen.getByLabelText(/Business \(optional\)/), "Café & Co");
-  await user.click(screen.getByRole("radio", { name: "Telegram" }));
-  await user.click(screen.getByRole("button", { name: "Prepare my message" }));
-  const preview = screen.getByRole("region", { name: "Message preview" });
-  assert.ok(preview.textContent?.includes("Ana from Café & Co"));
-  assert.ok(preview.textContent?.includes("business websites"));
+  for (const name of ["Telegram", "Viber", "SMS"]) {
+    assert.equal(
+      screen.getByRole("link", { name }).getAttribute("href"),
+      CONTACT[name.toLowerCase() as "telegram" | "viber" | "sms"],
+    );
+  }
+  const websiteLink = screen.getByRole("link", { name: /Business websites/ });
   assert.equal(
-    screen.getByRole("link", { name: "Open Telegram" }).getAttribute("href"),
-    CONTACT.telegram,
+    new URL(websiteLink.getAttribute("href")!).searchParams.get("text"),
+    "Hi Neo, I’m interested in business websites. Could you share the options and pricing?",
   );
-  await user.click(screen.getByRole("button", { name: "Copy message" }));
-  assert.ok((await navigator.clipboard.readText()).includes("Café & Co"));
-  await user.type(screen.getByLabelText("Your name"), " B");
-  assert.equal(screen.queryByRole("region", { name: "Message preview" }), null);
+  await user.click(screen.getByRole("button", { name: "Share page" }));
+  assert.equal(await navigator.clipboard.readText(), SITE_URL);
+  assert.ok(
+    screen.getByRole("status").textContent?.includes("Page link copied."),
+  );
   cleanup();
 });
 
@@ -120,8 +93,10 @@ test("the actual rendered QR decodes to the public contact page", async () => {
     .ensureAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
-  const decoded = jsQR(new Uint8ClampedArray(data), info.width, info.height);
-  assert.equal(decoded?.data, SITE_URL);
+  assert.equal(
+    jsQR(new Uint8ClampedArray(data), info.width, info.height)?.data,
+    SITE_URL,
+  );
   await user.click(screen.getByRole("button", { name: "Close QR code" }));
   assert.equal(screen.queryByRole("dialog"), null);
   cleanup();

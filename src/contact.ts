@@ -7,32 +7,10 @@ export const CONTACT = {
   sms: "sms:+639771686786",
   call: "tel:+639771686786",
 };
-export type Channel = "whatsapp" | "telegram" | "viber" | "sms";
 
-export function buildInquiry({
-  name,
-  business,
-  service,
-  details,
-}: {
-  name: string;
-  business: string;
-  service: string;
-  details: string;
-}) {
-  return `Hi Neo, I’m ${name.trim()}${business.trim() ? ` from ${business.trim()}` : ""}. I’m interested in ${service.toLowerCase()}.${details.trim() ? `\n\n${details.trim()}` : ""}\n\nCould you share the options and pricing?`;
-}
-
-export function getInquiryUrl(channel: Channel, message: string) {
-  if (channel === "whatsapp")
-    return `${CONTACT.whatsapp}?text=${encodeURIComponent(message)}`;
-  if (channel === "sms") {
-    const isApple =
-      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    return `${CONTACT.sms}${isApple ? "&" : "?"}body=${encodeURIComponent(message)}`;
-  }
-  return CONTACT[channel];
+export function getServiceUrl(service: string) {
+  const message = `Hi Neo, I’m interested in ${service.toLowerCase()}. Could you share the options and pricing?`;
+  return `${CONTACT.whatsapp}?text=${encodeURIComponent(message)}`;
 }
 
 export function makeVCard() {
